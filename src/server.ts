@@ -3,6 +3,11 @@ import cors from "cors";
 import dotenv from "dotenv";
 import { StreamChat } from "stream-chat";
 
+import { db } from "./config/database.js";
+import { chats, users } from "./db/schema.js";
+import { eq } from "drizzle-orm";
+import { ChatCompletion } from "openai/resources";
+
 dotenv.config();
 
 const app = express();
@@ -34,6 +39,19 @@ app.post("/chat", async (req: Request, res: Response): Promise<any> => {
 				.status(404)
 				.json({ error: "User not found. Please register first." });
 		}
+
+		// Check user in database
+		const existingUser = await db
+			.select()
+			.from(users)
+			.where(eq(users.userId, userId));
+
+		if (!existingUser.length) {
+			return res
+				.status(404)
+				.json({ error: "User not found in database, please register first." });
+		}
+
 		const response = await fetch(
 			"https://openrouter.ai/api/v1/chat/completions",
 			{
@@ -50,12 +68,27 @@ app.post("/chat", async (req: Request, res: Response): Promise<any> => {
 		);
 
 		const data = await response.json();
-		console.log(
-			"Response:",
-			data?.choices[0]?.message?.content || "No response"
-		);
+		const aiMessage =
+			data?.choices[0]?.message?.content ??
+			"Sorry, I'm not sure how to respond to that now. Please try again later.";
 
-		res.json({ response: data });
+		// Save message to database
+		await db.insert(chats).values({
+			userId,
+			message,
+			reply: aiMessage,
+		});
+
+		// Create or get channel
+		const channel = chatClient.channel("messaging", `chat-${userId}`, {
+			members: [userId],
+			created_by_id: "ai_bot",
+		});
+
+		await channel.create();
+		await channel.sendMessage({ text: aiMessage, user_id: "ai_bot" });
+
+		res.status(200).json({ reply: aiMessage });
 	} catch (error) {
 		console.error("Error in /chat endpoint:", error);
 		return res.status(500).json({
@@ -64,6 +97,27 @@ app.post("/chat", async (req: Request, res: Response): Promise<any> => {
 	}
 });
 
+// Get chat history
+app.post("/get-messages", async (req: Request, res: Response): Promise<any> => {
+	const { userId } = req.query;
+	if (!userId) {
+		return res.status(400).json({ error: "User ID is required" });
+	}
+	try {
+		// Fetch chat history from database
+		const chatHistory = await db
+			.select()
+			.from(chats)
+			.where(eq(chats.userId, userId as string));
+
+		res.status(200).json({ messages: chatHistory });
+	} catch (error) {
+		console.error("Error in /get-messages endpoint:", error);
+		return res.status(500).json({
+			error: error instanceof Error ? error.message : "Internal server error",
+		});
+	}
+});
 // register user with Stream Chat
 app.post(
 	"/register-user",
