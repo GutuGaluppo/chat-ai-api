@@ -6,7 +6,7 @@ import { StreamChat } from "stream-chat";
 import { db } from "./config/database.js";
 import { chats, users } from "./db/schema.js";
 import { eq } from "drizzle-orm";
-import { ChatCompletion } from "openai/resources";
+import { ChatCompletionMessageParam } from "openai/resources";
 
 dotenv.config();
 
@@ -133,9 +133,9 @@ app.post(
 			const userId = email.replace(/[^a-zA-Z0-9_-]/g, "_"); // Use email as user ID
 
 			// Check if user already exists
-			const existingUser = await chatClient.queryUsers({ id: { $eq: userId } });
+			const userResponse = await chatClient.queryUsers({ id: { $eq: userId } });
 
-			if (!existingUser.users.length) {
+			if (!userResponse.users.length) {
 				// Add new user to Stream Chat
 				await chatClient.upsertUser({
 					id: userId,
@@ -144,7 +144,24 @@ app.post(
 					role: "user",
 				});
 			}
+			// Check if user already exists in the database
+			const existingUser = await db
+				.select()
+				.from(users)
+				.where(eq(users.userId, userId));
 
+			if (!existingUser.length) {
+				console.log(
+					`User ${userId} does not exist in the database. Adding them...`
+				);
+				await db.insert(users).values({
+					userId,
+					name,
+					email,
+				});
+			}
+
+			console.log("User registered successfully", name, email);
 			res.status(200).json({ userId, name, email });
 		} catch (error) {
 			return res.status(500).json({ error: "Internal server error" });
