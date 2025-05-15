@@ -52,6 +52,25 @@ app.post("/chat", async (req: Request, res: Response): Promise<any> => {
 				.json({ error: "User not found in database, please register first." });
 		}
 
+		// Fetch users past messages for context
+		const chatHistory = await db
+			.select()
+			.from(chats)
+			.where(eq(chats.userId, userId))
+			.orderBy(chats.createdAt)
+			.limit(10);
+
+		// Format chat history for Gemini API
+		const conversation: ChatCompletionMessageParam[] = chatHistory.flatMap(
+			(chat) => [
+				{ role: "user", content: chat.message },
+				{ role: "assistant", content: chat.reply },
+			]
+		);
+
+		// Add latest user messages to the conversation
+		conversation.push({ role: "user", content: message });
+
 		const response = await fetch(
 			"https://openrouter.ai/api/v1/chat/completions",
 			{
@@ -61,8 +80,9 @@ app.post("/chat", async (req: Request, res: Response): Promise<any> => {
 					"Content-Type": "application/json",
 				},
 				body: JSON.stringify({
-					model: "google/gemini-2.0-flash-exp:free",
-					messages: [{ role: "user", content: message }],
+					model: "nousresearch/deephermes-3-mistral-24b-preview:free",
+					// model: "google/gemini-2.0-flash-exp:free",
+					messages: conversation as ChatCompletionMessageParam[],
 				}),
 			}
 		);
@@ -81,7 +101,7 @@ app.post("/chat", async (req: Request, res: Response): Promise<any> => {
 
 		// Create or get channel
 		const channel = chatClient.channel("messaging", `chat-${userId}`, {
-			members: [userId],
+			name: `AI Chat`,
 			created_by_id: "ai_bot",
 		});
 
