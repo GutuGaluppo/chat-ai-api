@@ -101,7 +101,7 @@ app.post("/chat", async (req: Request, res: Response): Promise<any> => {
 
 		// Create or get channel
 		const channel = chatClient.channel("messaging", `chat-${userId}`, {
-			name: `AI Chat`,
+			members: [userId],
 			created_by_id: "ai_bot",
 		});
 
@@ -160,8 +160,8 @@ app.post(
 				await chatClient.upsertUser({
 					id: userId,
 					name: name,
-					email: email,
 					role: "user",
+					...email,
 				});
 			}
 			// Check if user already exists in the database
