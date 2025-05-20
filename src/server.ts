@@ -119,7 +119,7 @@ app.post("/chat", async (req: Request, res: Response): Promise<any> => {
 
 // Get chat history
 app.post("/get-messages", async (req: Request, res: Response): Promise<any> => {
-	const { userId } = req.query;
+	const { userId } = req.body;
 	if (!userId) {
 		return res.status(400).json({ error: "User ID is required" });
 	}
